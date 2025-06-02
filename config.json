@@ -1,0 +1,10 @@
+{
+    "subscriptionID": "68915ced-864a-4180-9784-264b152f53ec",
+    "resourceGroup": "ad-monitoring",
+    "actionGroupLocation": "global",
+    "alertRuleLocation": "northeurope",
+    "workspaceName": "loganalytics-AD",
+    "actionGroupName": "log",
+    "alertRuleName": "Fail"
+  }
+  
