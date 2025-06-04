@@ -17,9 +17,26 @@ import (
 // Constants for messages and status
 const (
 	tokenURL           = "https://management.azure.com/"
-	invalidNotifType   = "❌ Ongeldig notificatietype, kies 'email' of 'sms'"
-	successActionGroup = "✅ Action group succesvol aangemaakt."
-	successAlertRule   = "✅ Alert rule succesvol aangemaakt."
+	invalidNotifType   = " Ongeldig notificatietype, kies 'email' of 'sms'"
+	successActionGroup = " Action group succesvol aangemaakt."
+	successAlertRule   = " Alert rule succesvol aangemaakt."
+)
+
+// 👇 Alle foutmeldingen als constanten
+const (
+	errLoadingConfig        = " Fout bij laden config.json:"
+	errParsingConfig        = " Fout bij parsen config.json:"
+	errGettingToken         = " Fout bij token ophalen:"
+	errUnmarshalToken       = " Fout bij json unmarshal:"
+	errTokenNotFound        = " Token niet gevonden in response"
+	errMarshallingAction    = " Fout bij JSON-marshallen:"
+	errCreatingRequest      = " Fout bij aanmaken request:"
+	errExecutingRequest     = " Fout bij uitvoeren request:"
+	errActionGroupResponse  = " Fout bij aanmaken action group:"
+	errMarshallingAlert     = " Fout bij marshallen alert rule:"
+	errCreatingAlertRequest = " Fout bij maken alert rule request:"
+	errAlertRequestFailed   = " Fout bij uitvoeren alert rule request:"
+	errAlertRuleResponse    = " Fout bij alert rule aanmaken:"
 )
 
 // Config holds configuration values from the JSON file
@@ -36,11 +53,11 @@ type Config struct {
 func loadConfig(filename string) Config {
 	file, err := os.ReadFile(filename)
 	if err != nil {
-		log.Fatalf("Fout bij laden config.json: %v", err)
+		log.Fatalf("%s %v", errLoadingConfig, err)
 	}
 	var config Config
 	if err := json.Unmarshal(file, &config); err != nil {
-		log.Fatalf("Fout bij parsen config.json: %v", err)
+		log.Fatalf("%s %v", errParsingConfig, err)
 	}
 	return config
 }
@@ -49,15 +66,15 @@ func getToken() string {
 	cmd := exec.Command("az", "account", "get-access-token", "--resource", tokenURL)
 	out, err := cmd.Output()
 	if err != nil {
-		log.Fatal("Fout bij token ophalen:", err)
+		log.Fatal(errGettingToken, err)
 	}
 	var result map[string]interface{}
 	if err := json.Unmarshal(out, &result); err != nil {
-		log.Fatal("Fout bij json unmarshal:", err)
+		log.Fatal(errUnmarshalToken, err)
 	}
 	token, ok := result["accessToken"].(string)
 	if !ok {
-		log.Fatal("Token niet gevonden in response")
+		log.Fatal(errTokenNotFound)
 	}
 	return token
 }
@@ -99,33 +116,32 @@ func createActionGroup(cfg Config, token, notifType, target string) string {
 
 	b, err := json.MarshalIndent(body, "", "  ")
 	if err != nil {
-		log.Fatal("Fout bij JSON-marshallen:", err)
+		log.Fatal(errMarshallingAction, err)
 	}
 
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(b))
 	if err != nil {
-		log.Fatal("Fout bij aanmaken request:", err)
+		log.Fatal(errCreatingRequest, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal("Fout bij uitvoeren request:", err)
+		log.Fatal(errExecutingRequest, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		log.Fatalf("Fout bij aanmaken action group: %s\nResponse body: %s", resp.Status, string(bodyBytes))
+		log.Fatalf("%s %s\nResponse body: %s", errActionGroupResponse, resp.Status, string(bodyBytes))
 	}
 
 	fmt.Println(successActionGroup)
 	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/actionGroups/%s", cfg.SubscriptionID, cfg.ResourceGroup, cfg.ActionGroupName)
 }
 
-// 👇 AANGEPAST: `query` toegevoegd als parameter
 func createAlertRule(cfg Config, token, actionGroupID, query string) {
 	url := fmt.Sprintf("https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/scheduledQueryRules/%s?api-version=2023-12-01",
 		cfg.SubscriptionID, cfg.ResourceGroup, cfg.AlertRuleName)
@@ -134,7 +150,7 @@ func createAlertRule(cfg Config, token, actionGroupID, query string) {
 		"location": cfg.AlertRuleLocation,
 		"properties": map[string]interface{}{
 			"enabled":             true,
-			"description":         "Alert bij custom query", // 👈 AANGEPAST
+			"description":         "Alert bij custom query",
 			"severity":            3,
 			"evaluationFrequency": "PT5M",
 			"windowSize":          "PT5M",
@@ -145,7 +161,7 @@ func createAlertRule(cfg Config, token, actionGroupID, query string) {
 			"criteria": map[string]interface{}{
 				"allOf": []map[string]interface{}{
 					{
-						"query":           query, // 👈 AANGEPAST
+						"query":           query,
 						"timeAggregation": "Count",
 						"operator":        "GreaterThan",
 						"threshold":       0,
@@ -164,26 +180,26 @@ func createAlertRule(cfg Config, token, actionGroupID, query string) {
 
 	b, err := json.MarshalIndent(body, "", "  ")
 	if err != nil {
-		log.Fatal("Fout bij marshallen alert rule:", err)
+		log.Fatal(errMarshallingAlert, err)
 	}
 
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(b))
 	if err != nil {
-		log.Fatal("Fout bij maken alert rule request:", err)
+		log.Fatal(errCreatingAlertRequest, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal("Fout bij uitvoeren alert rule request:", err)
+		log.Fatal(errAlertRequestFailed, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		log.Fatalf("Fout bij alert rule aanmaken: %s\nResponse body: %s", resp.Status, string(bodyBytes))
+		log.Fatalf("%s %s\nResponse body: %s", errAlertRuleResponse, resp.Status, string(bodyBytes))
 	}
 
 	fmt.Println(successAlertRule)
@@ -201,7 +217,6 @@ func main() {
 	target, _ := reader.ReadString('\n')
 	target = strings.TrimSpace(target)
 
-	// 👇 TOEGEVOEGD: Vraag de gebruiker om een Kusto-query in te voeren
 	fmt.Print("Voer je Kusto query in (voor de alert rule): ")
 	query, _ := reader.ReadString('\n')
 	query = strings.TrimSpace(query)
@@ -213,7 +228,7 @@ func main() {
 	actionGroupID := createActionGroup(config, token, notifType, target)
 
 	fmt.Println("📊 Alert rule aanmaken...")
-	createAlertRule(config, token, actionGroupID, query) // 👈 AANGEPAST: query meegeven
+	createAlertRule(config, token, actionGroupID, query)
 
 	fmt.Println("🎉 Klaar! Je alert en notificatie zijn ingesteld.")
 }
