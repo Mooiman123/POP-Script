@@ -104,12 +104,12 @@ func createActionGroup(cfg Config, token, notifType, target string) string {
 
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(b))
 	if err != nil {
-		log.Fatal("Fout bij aanmaken request:", err) // maak request aan
+		log.Fatal("Fout bij aanmaken request:", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second} //  stuurt de request met 15 seconden time out
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatal("Fout bij uitvoeren request:", err)
@@ -118,24 +118,23 @@ func createActionGroup(cfg Config, token, notifType, target string) string {
 
 	if resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		log.Fatalf("Fout bij aanmaken action group: %s\nResponse body: %s", resp.Status, string(bodyBytes)) // check of request naar api succesvol is , als die niet is error en als die juist is geeft die sycces action group.
+		log.Fatalf("Fout bij aanmaken action group: %s\nResponse body: %s", resp.Status, string(bodyBytes))
 	}
 
 	fmt.Println(successActionGroup)
-	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/actionGroups/%s", cfg.SubscriptionID, cfg.ResourceGroup, cfg.ActionGroupName) // retourneent de resource die zojuist is gemaakt
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/actionGroups/%s", cfg.SubscriptionID, cfg.ResourceGroup, cfg.ActionGroupName)
 }
 
-func createAlertRule(cfg Config, token, actionGroupID string) {
+// 👇 AANGEPAST: `query` toegevoegd als parameter
+func createAlertRule(cfg Config, token, actionGroupID, query string) {
 	url := fmt.Sprintf("https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/microsoft.insights/scheduledQueryRules/%s?api-version=2023-12-01",
 		cfg.SubscriptionID, cfg.ResourceGroup, cfg.AlertRuleName)
-
-	query := "Event | where EventID == 4625 | summarize count() by bin(TimeGenerated, 5m)"
 
 	body := map[string]interface{}{
 		"location": cfg.AlertRuleLocation,
 		"properties": map[string]interface{}{
 			"enabled":             true,
-			"description":         "Alert bij mislukte loginpogingen",
+			"description":         "Alert bij custom query", // 👈 AANGEPAST
 			"severity":            3,
 			"evaluationFrequency": "PT5M",
 			"windowSize":          "PT5M",
@@ -146,7 +145,7 @@ func createAlertRule(cfg Config, token, actionGroupID string) {
 			"criteria": map[string]interface{}{
 				"allOf": []map[string]interface{}{
 					{
-						"query":           query,
+						"query":           query, // 👈 AANGEPAST
 						"timeAggregation": "Count",
 						"operator":        "GreaterThan",
 						"threshold":       0,
@@ -202,6 +201,11 @@ func main() {
 	target, _ := reader.ReadString('\n')
 	target = strings.TrimSpace(target)
 
+	// 👇 TOEGEVOEGD: Vraag de gebruiker om een Kusto-query in te voeren
+	fmt.Print("Voer je Kusto query in (voor de alert rule): ")
+	query, _ := reader.ReadString('\n')
+	query = strings.TrimSpace(query)
+
 	fmt.Println("🔐 Token ophalen...")
 	token := getToken()
 
@@ -209,7 +213,7 @@ func main() {
 	actionGroupID := createActionGroup(config, token, notifType, target)
 
 	fmt.Println("📊 Alert rule aanmaken...")
-	createAlertRule(config, token, actionGroupID)
+	createAlertRule(config, token, actionGroupID, query) // 👈 AANGEPAST: query meegeven
 
 	fmt.Println("🎉 Klaar! Je alert en notificatie zijn ingesteld.")
 }
