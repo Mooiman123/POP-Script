@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-// Constants for messages and status
 const (
 	tokenURL           = "https://management.azure.com/"
 	invalidNotifType   = " Ongeldig notificatietype, kies 'email' of 'sms'"
@@ -22,7 +21,6 @@ const (
 	successAlertRule   = " Alert rule succesvol aangemaakt."
 )
 
-// 👇 Alle foutmeldingen als constanten
 const (
 	errLoadingConfig        = " Fout bij laden config.json:"
 	errParsingConfig        = " Fout bij parsen config.json:"
@@ -39,7 +37,6 @@ const (
 	errAlertRuleResponse    = " Fout bij alert rule aanmaken:"
 )
 
-// Config holds configuration values from the JSON file
 type Config struct {
 	SubscriptionID      string `json:"subscriptionID"`
 	ResourceGroup       string `json:"resourceGroup"`
@@ -205,8 +202,55 @@ func createAlertRule(cfg Config, token, actionGroupID, query string) {
 	fmt.Println(successAlertRule)
 }
 
+func checkUserRole() {
+	// Stap 1: Haal huidige gebruiker op
+	accountOut, err := exec.Command("az", "account", "show", "--output", "json").Output()
+	if err != nil {
+		log.Fatalf("Fout bij ophalen Azure-gebruiker: %v", err)
+	}
+
+	var account map[string]interface{}
+	if err := json.Unmarshal(accountOut, &account); err != nil {
+		log.Fatalf("Fout bij verwerken gebruikersgegevens: %v", err)
+	}
+
+	userObj, ok := account["user"].(map[string]interface{})
+	if !ok {
+		log.Fatal("Gebruikersinfo niet gevonden.")
+	}
+
+	userID := userObj["name"].(string)
+
+	// Stap 2: Haal rollen op voor deze gebruiker
+	rolesOut, err := exec.Command("az", "role", "assignment", "list", "--assignee", userID, "--output", "json").Output()
+	if err != nil {
+		log.Fatalf("Fout bij ophalen roltoewijzingen: %v", err)
+	}
+
+	// Stap 3: Check of vereiste rol aanwezig is
+	var assignments []map[string]interface{}
+	if err := json.Unmarshal(rolesOut, &assignments); err != nil {
+		log.Fatalf("Fout bij verwerken roltoewijzingen: %v", err)
+	}
+
+	requiredRoles := []string{"Monitoring Contributor"}
+
+	for _, assignment := range assignments {
+		roleName := assignment["roleDefinitionName"].(string)
+		for _, required := range requiredRoles {
+			if strings.EqualFold(roleName, required) {
+				fmt.Printf("✅ Toegang toegestaan (rol: %s)\n", roleName)
+				return
+			}
+		}
+	}
+
+	log.Fatalf("⛔ Je hebt geen toegestane rol (%v). Toegang geweigerd.", requiredRoles)
+}
+
 func main() {
 	config := loadConfig("config.json")
+	checkUserRole()
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Print("Wil je notificatie via email of sms? ")

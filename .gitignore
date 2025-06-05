@@ -1,0 +1,9 @@
+# Go build output
+*.exe
+*.out
+
+# OS/Editor artifacts
+.DS_Store
+
+# Configuratiebestand met gevoelige info
+config.json
